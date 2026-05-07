@@ -336,7 +336,7 @@
             graphCtx.stroke();
 
             graphCtx.font = 'bold 11px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
-            graphCtx.fillStyle = '#ffffff';
+            graphCtx.fillStyle = '#000000';  // Чёрный цвет для ников
             graphCtx.textAlign = 'center';
             graphCtx.textBaseline = 'top';
             let displayNick = nick.length > 8 ? nick.slice(0, 7) + '…' : nick;
@@ -345,7 +345,7 @@
 
         // Заголовок
         graphCtx.font = 'bold 10px sans-serif';
-        graphCtx.fillStyle = '#ffffff';
+        graphCtx.fillStyle = '#000000';  // Чёрный цвет для заголовка
         graphCtx.textAlign = 'center';
         graphCtx.fillText(`Игроки (${ids.length})`, centerX, h - 10);
     }
