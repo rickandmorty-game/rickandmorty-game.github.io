@@ -207,6 +207,56 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Контейнер уведомлений */
+        #notification-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 4000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .notification {
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 28px;
+            font-size: 15px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            animation: notif-slide-in 0.4s ease-out, notif-fade-out 0.4s 2.6s forwards;
+            max-width: 320px;
+            text-align: center;
+            pointer-events: auto;
+        }
+
+        @keyframes notif-slide-in {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes notif-fade-out {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.9);
+            }
+        }
     </style>
 </head>
 <body>
@@ -249,6 +299,9 @@
     </div>
 </div>
 
+<!-- Контейнер для всплывающих уведомлений -->
+<div id="notification-container"></div>
+
 <script type="importmap">
     {
         "imports": {
@@ -277,6 +330,37 @@
 
     // Yjs структура для сообщений чата
     const chatMessages = ydoc.getArray('chatMessages');
+
+    // --- Audio Context для звуковых сигналов ---
+    let audioCtx = null;
+
+    function getAudioContext() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioCtx;
+    }
+
+    function playNotificationSound() {
+        try {
+            const ctx = getAudioContext();
+            // Короткий приятный сигнал из двух тонов
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, now); // C5
+            osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.3);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } catch (e) {
+            // Игнорируем ошибки (например, если контекст ещё не разрешён)
+        }
+    }
 
     // --- P2P Graph ---
     const graphCanvas = document.getElementById('p2p-graph');
@@ -336,7 +420,7 @@
             graphCtx.stroke();
 
             graphCtx.font = 'bold 11px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
-            graphCtx.fillStyle = '#000000';  // Чёрный цвет для ников
+            graphCtx.fillStyle = '#000000';
             graphCtx.textAlign = 'center';
             graphCtx.textBaseline = 'top';
             let displayNick = nick.length > 8 ? nick.slice(0, 7) + '…' : nick;
@@ -345,7 +429,7 @@
 
         // Заголовок
         graphCtx.font = 'bold 10px sans-serif';
-        graphCtx.fillStyle = '#000000';  // Чёрный цвет для заголовка
+        graphCtx.fillStyle = '#000000';
         graphCtx.textAlign = 'center';
         graphCtx.fillText(`Игроки (${ids.length})`, centerX, h - 10);
     }
@@ -447,11 +531,46 @@
     };
 
     // Подписка на изменения сообщений
+    let lastMessageCount = 0;
     chatMessages.observe(() => {
-        if (currentTargetId) {
+        const currentMessages = chatMessages.toArray();
+        const newMessages = currentMessages.slice(lastMessageCount);
+        lastMessageCount = currentMessages.length;
+
+        // Проверяем новые входящие сообщения (не от меня и адресованные мне)
+        for (const msg of newMessages) {
+            if (msg.from !== awareness.clientID && msg.to === awareness.clientID) {
+                // Получаем ник отправителя из awareness или remotePlayers
+                const senderState = awareness.getStates().get(msg.from);
+                const senderNick = senderState?.nick || 'Игрок';
+                showNotification(senderNick, msg.text);
+                playNotificationSound();
+            }
+        }
+
+        // Обновляем окно чата, если открыто с соответствующим собеседником
+        if (currentTargetId && newMessages.some(m => 
+            (m.from === currentTargetId && m.to === awareness.clientID) ||
+            (m.from === awareness.clientID && m.to === currentTargetId)
+        )) {
             renderChatMessages();
         }
     });
+
+    function showNotification(senderNick, text) {
+        const container = document.getElementById('notification-container');
+        const notif = document.createElement('div');
+        notif.className = 'notification';
+        notif.innerHTML = `<strong>${escapeHtml(senderNick)}</strong> – ${escapeHtml(text)}`;
+        container.appendChild(notif);
+
+        // Автоматическое удаление после окончания анимации (3 секунды)
+        setTimeout(() => {
+            if (notif.parentNode) {
+                notif.remove();
+            }
+        }, 3000);
+    }
 
     function renderChatMessages() {
         const container = document.getElementById('chat-messages');
